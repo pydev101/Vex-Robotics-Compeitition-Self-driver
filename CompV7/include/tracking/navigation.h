@@ -85,6 +85,8 @@ private:
   bool headingIndependence = false; //Determines if the heading is controlled by the tangential error direction
   bool atTarget = false;
   bool isStopped = false;
+  bool atRotTarget = false;
+  bool isStoppedRot = false;
 
 public:
   double stopRadius;
@@ -92,8 +94,9 @@ public:
   double errorRadius;
   double errorTime;
   double shiftRadius;
+  double stopAngularRadius;
 
-  Navigator(Point currentPosition, double currentHeading, double stopRadiusArg, double stopTimeArg, double errorRadiusArg, double errorTimeArg, double shiftRadiusArg){
+  Navigator(Point currentPosition, double currentHeading, double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, double stopTimeArg, double errorTimeArg, double shiftRadiusArg){
     currentPos = {currentPosition, currentHeading};
     currentTarget = currentPos;
     lastTarget = currentPos;
@@ -104,13 +107,14 @@ public:
     errorRadius = errorRadiusArg;
     errorTime = errorTimeArg;
     shiftRadius = shiftRadiusArg;
+    stopAngularRadius = stopAngularRadiusArg;
   }
 
-  //Intended to be used to replace tracking data with info from inertial or gps sensors after calling the updateLocation function with the deltas but before calling the updateLocation function
   void setHead(double newHead, bool headingInDegrees){
     if(headingInDegrees){
       newHead = degToRad(newHead);
     }
+    newHead = normalizeAngle(newHead);
     currentPos.head = newHead;
   }
   void setCurrentPosition(Point p){
@@ -121,37 +125,34 @@ public:
   }
 
   //Updates Position data based on global transformations
-  void updateLocationGlobal(Vector deltaPos, double deltaHeading, double deltaT, bool headingInDegrees=false){
+  void shiftLocationGlobal(Vector deltaPos, double deltaHeading, bool headingInDegrees=false){
     if(headingInDegrees){
       deltaHeading = degToRad(deltaHeading);
     }
 
     currentPos.p = deltaPos + currentPos.p;
-    currentPos.head = currentPos.head + deltaHeading;
-
-    Vector newV = deltaPos.scale(1/deltaT);
-    tangentialAcceleration = (newV - tangentialVelocity).scale(1/deltaT);
-    tangentialVelocity = newV;
-    
-    double newOmega = deltaHeading / deltaT;
-    angularAcceleration = (newOmega - angularVelocity)/deltaT;
-    angularVelocity = newOmega;
+    currentPos.head = normalizeAngle(currentPos.head + deltaHeading);
   }
 
   //Updates Position data based on local transformations
-  void updateLocationLocal(Vector deltaFwd, double deltaHeading, double deltaT, bool headingInDegrees=false){
+  void shiftLocationLocal(Vector deltaFwd, double deltaHeading, bool headingInDegrees=false){
     Vector deltaPos = Vector(deltaFwd.getY(), currentPos.head) + Vector(deltaFwd.getX(), currentPos.head - PI/2);
-    updateLocationGlobal(deltaPos, deltaHeading, deltaT, headingInDegrees);
+    shiftLocationGlobal(deltaPos, deltaHeading, headingInDegrees);
   }
 
   //Updates the targeting system and error vectors
-  //Stop status if not moving based on previous location, shift target to next one in path if at target unless target is also tyhe next target then its the last target, at target if passed within threashold of target
   void updateTracking(double deltaT){
     static double stopTimer = 0;
     static double errorTimer = 0;
+    static double rotStopTimer =0;
+    static double rotErrorTimer = 0;
 
     Vector motion = Vector(previousPos.p, currentPos.p);
-    previousPos = currentPos;
+
+    Vector newV = motion.scale(1/deltaT);
+    tangentialAcceleration = (newV - tangentialVelocity).scale(1/deltaT);
+    tangentialVelocity = newV;
+
     if(motion.getMagnitude() < stopRadius){
       stopTimer += deltaT;
       if(stopTimer > stopTime){
@@ -189,11 +190,37 @@ public:
       errorTimer = 0;
       atTarget = false;
     }
+
+    double angularDifference = shortestArcToTarget(previousPos.head, currentTarget.head);
+
+    double newOmega = angularDifference / deltaT;
+    angularAcceleration = (newOmega - angularVelocity)/deltaT;
+    angularVelocity = newOmega;
+
+    if(abs(angularDifference) < stopAngularRadius){
+      rotStopTimer += deltaT;
+      if(rotStopTimer > stopTime){
+        isStoppedRot = true;
+      }
+    }else{
+      rotStopTimer = 0;
+      isStoppedRot = false;
+    }
+
+    double angularError = abs(shortestArcToTarget(currentPos.head, currentTarget.head));
+    if(angularError < stopAngularRadius){
+      rotErrorTimer += deltaT;
+      if(rotErrorTimer > errorTime){
+        atRotTarget = true;
+      }
+    }else{
+      rotErrorTimer = 0;
+      atRotTarget = false;
+    }
     
+    previousPos = currentPos;
   }
 
-
-//TODO may have issues with multi trheading
   //Targeting setters
   void setTarget(double deltaX, double deltaY){
     setTarget(Vector(deltaX, deltaY));
@@ -216,14 +243,19 @@ public:
     atTarget = false;
   }
 
-  void setTarget(double deltaX, double deltaY, double targetHead){
-    setTarget(Vector(deltaX, deltaY), targetHead);
+  void setTarget(double deltaX, double deltaY, double targetHead, bool inDeg=false){
+    setTarget(Vector(deltaX, deltaY), targetHead, inDeg);
   }
-  void setTarget(Vector v, double targetHead){
-    setAbsTarget(v + currentTarget.p, targetHead);
+  void setTarget(Vector v, double targetHead, bool inDeg=false){
+    setAbsTarget(v + currentTarget.p, targetHead, inDeg);
   }
-  void setAbsTarget(Point p, double targetHead){
+  void setAbsTarget(Point p, double targetHead, bool inDeg=false){
     headingIndependence = true;
+
+    if(inDeg){
+      targetHead = degToRad(targetHead);
+    }
+    targetHead = normalizeAngle(targetHead);
 
     lastTarget = currentTarget;
     currentTarget = {p, targetHead};
@@ -241,6 +273,7 @@ public:
     if(inDeg){
       head = degToRad(head);
     }
+    head = normalizeAngle(head);
     currentTarget.head = head;
   }
   void turn(double deltaHeading, bool inDeg=false){
@@ -279,6 +312,12 @@ public:
   double getReverseHeadError(){
     return lastTarget.head - currentTarget.head;
   }
+  double getTranslationalGlobalHeading(){
+    return Vector(1, 0).getAngle(getGlobalError());
+  }
+  double getTranslationalLocalHeading(){
+    return Vector(1, 0).getAngle(getLocalError());
+  }
 
   Vector getGlobalVelocity(){
     return tangentialVelocity;
@@ -293,11 +332,17 @@ public:
     return tangentialAcceleration.project(getRobotNormalVector());
   }
 
-  bool stopped(){
-    return isStopped;
+  bool isMoving(){
+    return !isStopped;
+  }
+  bool isTurning(){
+    return !isStoppedRot;
   }
   bool isAtTarget(){
     return atTarget;
+  }
+  bool isAtRotTarget(){
+    return atRotTarget;
   }
 };
 
