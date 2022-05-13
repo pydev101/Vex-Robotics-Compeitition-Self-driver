@@ -21,12 +21,15 @@ typedef struct {
   double head; //Radians
 } positionSet;
 
-bool operator!=(const positionSet& a, const positionSet& b){
+bool operator==(const positionSet& a, const positionSet& b){
   if((a.p.x == b.p.x) && (a.p.y == b.p.y) && (a.head == b.head)){
     return true;
   }else{
     return false;
   }
+}
+bool operator!=(const positionSet& a, const positionSet& b){
+  return !(a == b);
 }
 
 class PositionList{
