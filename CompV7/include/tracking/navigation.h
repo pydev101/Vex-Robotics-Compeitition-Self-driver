@@ -98,6 +98,7 @@ public:
   double errorTime;
   double shiftRadius;
   double stopAngularRadius;
+  bool forward = true;
 
   Navigator(Point currentPosition, double currentHeading, double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, double stopTimeArg, double errorTimeArg, double shiftRadiusArg){
     currentPos = {currentPosition, currentHeading};
@@ -210,6 +211,15 @@ public:
       isStoppedRot = false;
     }
 
+    if(!headingIndependence){
+      double targetHead = Vector(1, 0).getAngle(Vector(currentPos.p, currentTarget.p));
+      if(!forward){
+        targetHead = targetHead + PI;
+        targetHead = normalizeAngle(targetHead);
+      }
+      currentTarget.head = targetHead;
+    }
+
     double angularError = abs(shortestArcToTarget(currentPos.head, currentTarget.head));
     if(angularError < stopAngularRadius){
       rotErrorTimer += deltaT;
@@ -233,6 +243,11 @@ public:
   }
   void setAbsTarget(Point p){
     double targetHead = Vector(1, 0).getAngle(Vector(currentPos.p, p));
+    if(!forward){
+      targetHead = targetHead + PI;
+      targetHead = normalizeAngle(targetHead);
+    }
+
     headingIndependence = false;
 
     lastTarget = currentTarget;
@@ -310,10 +325,10 @@ public:
   }
 
   double getHeadError(){
-    return currentTarget.head - currentPos.head;
+    return shortestArcToTarget(currentPos.head, currentTarget.head);
   }
   double getReverseHeadError(){
-    return lastTarget.head - currentTarget.head;
+    return shortestArcToTarget(lastTarget.head, currentPos.head);
   }
   double getTranslationalGlobalHeading(){
     return Vector(1, 0).getAngle(getGlobalError());
