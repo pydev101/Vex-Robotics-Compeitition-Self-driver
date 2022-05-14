@@ -67,9 +67,10 @@ public:
 };
 
 class Navigator{
-private:
+protected:
   positionSet currentPos = {Point(0, 0), 0};
   positionSet previousPos = {Point(0, 0), 0};
+  positionSet lastStoppedPos = {Point(0, 0), 0};
 
   Vector tangentialVelocity = Vector(0, 0); //units per second
   double angularVelocity = 0; //radians per second
@@ -100,12 +101,18 @@ public:
   double stopAngularRadius;
   bool forward = true;
 
-  Navigator(Point currentPosition, double currentHeading, double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, double stopTimeArg, double errorTimeArg, double shiftRadiusArg){
+  Navigator(Point currentPosition, double currentHeading, bool currentHeadingInDeg, double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, double stopTimeArg, double errorTimeArg, double shiftRadiusArg){
+    if(currentHeadingInDeg){
+      currentHeading = degToRad(currentHeading);
+    }
+    currentHeading = normalizeAngle(currentHeading);
+
     currentPos = {currentPosition, currentHeading};
     currentTarget = currentPos;
     lastTarget = currentPos;
     nextTarget = currentPos;
     previousPos = currentPos;
+    lastStoppedPos = currentPos;
     stopRadius = stopRadiusArg;
     stopTime = stopTimeArg;
     errorRadius = errorRadiusArg;
@@ -160,6 +167,7 @@ public:
     if(motion.getMagnitude() < stopRadius){
       stopTimer += deltaT;
       if(stopTimer > stopTime){
+        lastStoppedPos.p = currentPos.p;
         isStopped = true;
       }
     }else{
@@ -204,6 +212,7 @@ public:
     if(abs(angularDifference) < stopAngularRadius){
       rotStopTimer += deltaT;
       if(rotStopTimer > stopTime){
+        lastStoppedPos.head = currentPos.head;
         isStoppedRot = true;
       }
     }else{
@@ -235,10 +244,10 @@ public:
   }
 
   //Targeting setters
-  void setTarget(double deltaX, double deltaY){
-    setTarget(Vector(deltaX, deltaY));
+  void setAbsTarget(double deltaX, double deltaY){
+    setAbsTarget(Vector(deltaX, deltaY));
   }
-  void setTarget(Vector v){
+  void setAbsTarget(Vector v){
     setAbsTarget(v + currentTarget.p);
   }
   void setAbsTarget(Point p){
@@ -261,10 +270,10 @@ public:
     atTarget = false;
   }
 
-  void setTarget(double deltaX, double deltaY, double targetHead, bool inDeg=false){
-    setTarget(Vector(deltaX, deltaY), targetHead, inDeg);
+  void setAbsTarget(double deltaX, double deltaY, double targetHead, bool inDeg=false){
+    setAbsTarget(Vector(deltaX, deltaY), targetHead, inDeg);
   }
-  void setTarget(Vector v, double targetHead, bool inDeg=false){
+  void setAbsTarget(Vector v, double targetHead, bool inDeg=false){
     setAbsTarget(v + currentTarget.p, targetHead, inDeg);
   }
   void setAbsTarget(Point p, double targetHead, bool inDeg=false){
@@ -284,6 +293,21 @@ public:
     targetPath.append({p, targetHead});
 
     atTarget = false;
+  }
+
+  void setRelTarget(double deltaX, double deltaY){
+    setRelTarget(Vector(deltaX, deltaY));
+  }
+  void setRelTarget(Vector v){
+    v.getRotatedVector(currentTarget.head);
+    setAbsTarget(v);
+  }
+  void setRelTarget(double deltaX, double deltaY, double targetHead, bool inDeg=false){
+    setRelTarget(Vector(deltaX, deltaY), targetHead, inDeg);
+  }
+  void setRelTarget(Vector v, double targetHead, bool inDeg=false){
+    v.getRotatedVector(currentTarget.head);
+    setAbsTarget(v, targetHead, inDeg);
   }
 
   void turnTo(double head, bool inDeg=false){
@@ -317,18 +341,24 @@ public:
   Vector getReverseLocalError(){
     return getReverseGlobalError().project(getRobotNormalVector());
   }
+  Vector getNextLocalError(){
+    return getNextGlobalError().project(getRobotNormalVector());
+  }
   Vector getGlobalError(){
     return Vector(currentPos.p, currentTarget.p);
   }
   Vector getReverseGlobalError(){
-    return Vector(lastTarget.p, currentTarget.p);
+    return Vector(lastStoppedPos.p, currentTarget.p);
+  }
+  Vector getNextGlobalError(){
+    return Vector(currentTarget.p, nextTarget.p);
   }
 
   double getHeadError(){
     return shortestArcToTarget(currentPos.head, currentTarget.head);
   }
   double getReverseHeadError(){
-    return shortestArcToTarget(lastTarget.head, currentPos.head);
+    return shortestArcToTarget(lastStoppedPos.head, currentPos.head);
   }
   double getTranslationalGlobalHeading(){
     return Vector(1, 0).getAngle(getGlobalError());
