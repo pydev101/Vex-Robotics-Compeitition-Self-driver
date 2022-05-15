@@ -20,12 +20,13 @@ protected:
   Vector outputVelocity = Vector(0, 0);
   double outputAngularVelocity = 0;
 
+  int mode = 0;
+
 public:
   PIDGains linearGains = {0, 0, 0};
   PIDGains rotGains = {0, 0, 0};
   PIDGains reverseLinearGains = {0, 0, 0};
   PIDGains reverseRotGains = {0, 0, 0};
-  bool PIDMode = true;
   double maxDeltaV = 1000;
   double maxDeltaW = 1000;
 
@@ -54,36 +55,62 @@ public:
     double currentAngularVel = getAngularVelocity();
 
     //Set Target Velocites
-    if(PIDMode){
-      //Rotation PID
-      if(abs(hError) < abs(rHError)){
-        targetAngularVel = hError*rotGains.p;
-      }else{
-        targetAngularVel = (abs(rHError)*reverseRotGains.p + reverseRotGains.i)*sign(hError);
-      }
 
+    if(mode == 0){
+      //PID
 
       //Tangential PID
       if(headingIndependence){
+        if(abs(hError) > stopAngularRadius){
+          if(abs(hError) < abs(rHError)){
+            targetAngularVel = hError*rotGains.p;
+          }else{
+            targetAngularVel = (abs(rHError)*reverseRotGains.p + reverseRotGains.i)*sign(hError);
+          }
+        }else{
+          targetAngularVel = 0;
+        }
+
         //Magnitude of PID(e) but direction of error
         double mag = 0;
-        if(error.getMagnitude() < rError.getMagnitude()){
-          mag = error.getMagnitude()*linearGains.p;
-        }else{
-          mag = rError.getMagnitude()*reverseLinearGains.p + reverseLinearGains.i;
+        if(error.getMagnitude() > errorRadius){
+          if(error.getMagnitude() < rError.getMagnitude()){
+            mag = error.getMagnitude()*linearGains.p;
+          }else{
+            mag = rError.getMagnitude()*reverseLinearGains.p + reverseLinearGains.i;
+          }
         }
         targetVelocity = Vector(mag, getTranslationalLocalHeading(), false);
       }else{
-        //Magnitude of PID(e) but only on y axis
-        if(abs(error.getY()) < abs(rError.getY())){
-          targetVelocity = Vector(0, error.getY()*linearGains.p);
+        if(abs(hError) > stopAngularRadius){
+          targetAngularVel = hError*rotGains.p;
         }else{
-          targetVelocity = Vector(0, (abs(rError.getY())*reverseLinearGains.p + reverseLinearGains.i)*sign(error.getY()));
+          targetAngularVel = 0;
+        }
+
+        //Magnitude of PID(e) but only on y axis
+        if(error.getMagnitude() > errorRadius){
+          if(abs(error.getY()) < abs(rError.getY())){
+            targetVelocity = Vector(0, error.getY()*linearGains.p);
+          }else{
+            targetVelocity = Vector(0, (abs(rError.getY())*reverseLinearGains.p + reverseLinearGains.i)*sign(error.getY()));
+          }
+        }else{
+          targetVelocity = Vector(0, 0);
         }
       }
+    }else if (mode == 1) {
+      //Constant velocity
+
+      //TODO accelerate to CV until its time to decelerate at maxAccel to stop exactly at target; calculate when to set target vel to 0 to ensure this
+    }else if(mode == 2){
+      //Path following mode
+
+      //Same as CV execept it will adapt if their is a next target
     }
 
-    //TODO might have some issues might need to do some division by deltaT or soemthign
+
+    //After target vel is set its then check for acceleration
     Vector dV = targetVelocity - currentVel;
     if(dV.getMagnitude() > maxDeltaV){
       dV = dV.getUnitVector().scale(maxDeltaV);
@@ -91,8 +118,8 @@ public:
     outputVelocity = currentVel + dV;
 
     double deltaOmega = targetAngularVel - currentAngularVel;
-    if(deltaOmega > maxDeltaW){
-      deltaOmega = maxDeltaW;
+    if(abs(deltaOmega) > maxDeltaW){
+      deltaOmega = maxDeltaW*sign(deltaOmega);
     }
     outputAngularVelocity = currentAngularVel + deltaOmega; 
   }
@@ -104,6 +131,10 @@ public:
 
   double getAngularVelocity(){
     return outputAngularVelocity;
+  }
+
+  void activatePID(){
+    mode = 0;
   }
 };
 
