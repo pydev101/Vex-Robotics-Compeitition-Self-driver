@@ -164,6 +164,8 @@ public:
     tangentialAcceleration = (newV - tangentialVelocity).scale(1/deltaT);
     tangentialVelocity = newV;
 
+
+    //TODO IF NOT HEADING INDEPENDECNCE MAKE THIS BASED OFF THE DOT PRODUCT
     if(motion.getMagnitude() < stopRadius){
       stopTimer += deltaT;
       if(stopTimer > stopTime){
@@ -331,18 +333,24 @@ public:
     turnTo(Vector(1, 0).getAngle(v));
   }
 
+  Vector translateGlobalToLocal(Vector v){
+    return v.getRotatedVector(PI*0.5 - currentPos.head);
+  }
+  Vector translateLocalToGlobal(Vector v){
+    return v.getRotatedVector(currentPos.head - PI*0.5);
+  }
 
   Vector getRobotNormalVector(){
     return Vector(1, currentPos.head, false);
   }
   Vector getLocalError(){
-    return getGlobalError().project(getRobotNormalVector());
+    return translateGlobalToLocal(getGlobalError());
   }
   Vector getReverseLocalError(){
-    return getReverseGlobalError().project(getRobotNormalVector());
+    return translateGlobalToLocal(getReverseGlobalError());
   }
   Vector getNextLocalError(){
-    return getNextGlobalError().project(getRobotNormalVector());
+    return translateGlobalToLocal(getNextGlobalError());
   }
   Vector getGlobalError(){
     return Vector(currentPos.p, currentTarget.p);
@@ -353,7 +361,6 @@ public:
   Vector getNextGlobalError(){
     return Vector(currentTarget.p, nextTarget.p);
   }
-
   double getHeadError(){
     return shortestArcToTarget(currentPos.head, currentTarget.head);
   }
@@ -366,18 +373,20 @@ public:
   double getTranslationalLocalHeading(){
     return Vector(1, 0).getAngle(getLocalError());
   }
-
   Vector getGlobalVelocity(){
     return tangentialVelocity;
   }
   Vector getLocalVelocity(){
-    return tangentialVelocity.project(getRobotNormalVector());
+    return translateGlobalToLocal(tangentialVelocity);
   }
   Vector getGlobalAcceleration(){
     return tangentialAcceleration;
   }
   Vector getLocalAcceleration(){
-    return tangentialAcceleration.project(getRobotNormalVector());
+    return translateGlobalToLocal(tangentialAcceleration);
+  }
+  double getAngularVelocity(){
+    return angularVelocity;
   }
 
   bool isMoving(){
