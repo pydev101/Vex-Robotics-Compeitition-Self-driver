@@ -21,6 +21,7 @@ protected:
   double outputAngularVelocity = 0;
 
   int mode = 0;
+  Vector userDesiredVel = Vector(0, 0);
 
 public:
   PIDGains linearGains = {0, 0, 0};
@@ -101,8 +102,19 @@ public:
       }
     }else if (mode == 1) {
       //Constant velocity
-
-      //TODO accelerate to CV until its time to decelerate at maxAccel to stop exactly at target; calculate when to set target vel to 0 to ensure this
+      if(error.getMagnitude() > errorRadius){
+        if(error.getMagnitude() > currentVel.getMagnitude()*currentVel.getMagnitude()/(2*maxDeltaV)){
+          targetVelocity = userDesiredVel;
+        }else{
+          if(headingIndependence){
+            targetVelocity = Vector(error.getMagnitude()*linearGains.p, getTranslationalLocalHeading(), false);
+          }else{
+            targetVelocity = Vector(0, error.getY()*linearGains.p);
+          }
+        }
+      }else{
+        targetVelocity = Vector(0, 0);
+      }
     }else if(mode == 2){
       //Path following mode
 
@@ -135,6 +147,10 @@ public:
 
   void activatePID(){
     mode = 0;
+  }
+  void activateCV(Vector cv){
+    userDesiredVel = cv;
+    mode = 1;
   }
 };
 
