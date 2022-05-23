@@ -93,15 +93,15 @@ protected:
   bool isStoppedRot = false;
 
 public:
-  double stopRadius;
-  double stopTime;
-  double errorRadius;
-  double errorTime;
-  double shiftRadius;
-  double stopAngularRadius;
+  double stopRadius = 1;
+  double stopTime = 0.2;
+  double errorRadius = 1;
+  double errorTime = 0.2;
+  double shiftRadius = 12;
+  double stopAngularRadius = degToRad(1);
   bool forward = true;
 
-  Navigator(Point currentPosition, double currentHeading, bool currentHeadingInDeg, double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, double stopTimeArg, double errorTimeArg, double shiftRadiusArg){
+  Navigator(Point currentPosition, double currentHeading, bool currentHeadingInDeg){
     if(currentHeadingInDeg){
       currentHeading = degToRad(currentHeading);
     }
@@ -113,12 +113,6 @@ public:
     nextTarget = currentPos;
     previousPos = currentPos;
     lastStoppedPos = currentPos;
-    stopRadius = stopRadiusArg;
-    stopTime = stopTimeArg;
-    errorRadius = errorRadiusArg;
-    errorTime = errorTimeArg;
-    shiftRadius = shiftRadiusArg;
-    stopAngularRadius = stopAngularRadiusArg;
   }
 
   void setHead(double newHead, bool headingInDegrees){

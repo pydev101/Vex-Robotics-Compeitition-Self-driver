@@ -10,9 +10,7 @@
 // ---- START VEXCODE CONFIGURED DEVICES ----
 // ---- END VEXCODE CONFIGURED DEVICES ----
 
-#include "vex.h"
-
-using namespace vex;
+#include "implementation.h"
 
 int main() {
   // Initializing Robot Configuration. DO NOT REMOVE!

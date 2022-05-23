@@ -5,6 +5,9 @@
 Name: robotModels.h
 Written By: Carson Easterling
 
+TODO
+Max Velocity
+Path transitions
 
 */
 
@@ -24,18 +27,18 @@ protected:
   Vector userDesiredVel = Vector(0, 0);
 
 public:
-  PIDGains linearGains = {0, 0, 0};
+  PIDGains linearGains = {0, 0, 0}; //Pct per Unit Error
   PIDGains rotGains = {0, 0, 0};
   PIDGains reverseLinearGains = {0, 0, 0};
   PIDGains reverseRotGains = {0, 0, 0};
-  double maxDeltaV = 1000;
-  double maxDeltaW = 1000;
+  double maxDeltaV = 2; //Pct
+  double maxDeltaW = 2;
+  double maxV = 100; //Pct
+  double maxW = 100;
 
   Robot(Point currentPosition, double currentHeading, bool currentHeadingInDeg,
-            double stopRadiusArg, double errorRadiusArg, double stopAngularRadiusArg, 
-            double stopTimeArg, double errorTimeArg, double shiftRadiusArg,
             PIDGains linearGainContants, PIDGains roationalGainContants,
-            PIDGains reverseLinearGainContants, PIDGains reverseRoationalGainContants): Navigator(currentPosition, currentHeading, currentHeadingInDeg, stopRadiusArg, errorRadiusArg, stopAngularRadiusArg, stopTimeArg, errorTimeArg, shiftRadiusArg){ 
+            PIDGains reverseLinearGainContants, PIDGains reverseRoationalGainContants): Navigator(currentPosition, currentHeading, currentHeadingInDeg){ 
     linearGains = linearGainContants;
     rotGains = roationalGainContants;
     reverseLinearGains = reverseLinearGainContants;
@@ -44,7 +47,7 @@ public:
 
   void updateTargetVelocities(double deltaT){
     //TODO Build in support for transitiotng between this target and the next one if the yare not the same
-    //Support for pid velocitiy, constant velocity, path velocity
+    //TODO build in support for current vel
 
     Vector error = getLocalError();
     Vector rError = getReverseLocalError();
@@ -52,8 +55,11 @@ public:
     double hError = getHeadError();
     double rHError = getReverseHeadError();
 
-    Vector currentVel = getLocalVelocity();
-    double currentAngularVel = getAngularVelocity();
+    static Vector oldTargetVel = Vector(0, 0);
+    oldTargetVel = targetVelocity;
+
+    static double oldTargetW = 0;
+    oldTargetW = targetAngularVel;
 
     //Set Target Velocites
 
@@ -103,7 +109,7 @@ public:
     }else if (mode == 1) {
       //Constant velocity
       if(error.getMagnitude() > errorRadius){
-        if(error.getMagnitude() > currentVel.getMagnitude()*currentVel.getMagnitude()/(2*maxDeltaV)){
+        if(error.getMagnitude() > oldTargetVel.getMagnitude()*oldTargetVel.getMagnitude()/(2*maxDeltaV)){
           targetVelocity = userDesiredVel;
         }else{
           if(headingIndependence){
@@ -123,17 +129,25 @@ public:
 
 
     //After target vel is set its then check for acceleration
-    Vector dV = targetVelocity - currentVel;
+    Vector dV = targetVelocity - oldTargetVel;
     if(dV.getMagnitude() > maxDeltaV){
       dV = dV.getUnitVector().scale(maxDeltaV);
     }
-    outputVelocity = currentVel + dV;
+    targetVelocity = oldTargetVel + dV;
+    if(targetVelocity.getMagnitude() > maxV){
+      targetVelocity = targetVelocity.getUnitVector().scale(maxV);
+    }
+    outputVelocity = targetVelocity;
 
-    double deltaOmega = targetAngularVel - currentAngularVel;
+    double deltaOmega = targetAngularVel - oldTargetW;
     if(abs(deltaOmega) > maxDeltaW){
       deltaOmega = maxDeltaW*sign(deltaOmega);
     }
-    outputAngularVelocity = currentAngularVel + deltaOmega; 
+    targetAngularVel = deltaOmega + oldTargetW;
+    if(abs(targetAngularVel) > maxW){
+      targetAngularVel = sign(targetAngularVel)*maxW;
+    }
+    outputAngularVelocity = targetAngularVel; 
   }
 
   //Outputs are local to the robot
@@ -154,5 +168,62 @@ public:
   }
 };
 
+void setM(vex::motor m, double speed, vex::velocityUnits uni=vex::velocityUnits::pct){
+  m.setVelocity(speed, uni);
+  if(speed == 0){
+    m.stop();
+  }else{
+    m.spin(vex::forward);
+  }
+}
+
+void setSide(vex::motor_group m, double speed, vex::velocityUnits uni=vex::velocityUnits::pct){
+  m.setVelocity(speed, uni);
+  if(speed == 0){
+    m.stop();
+  }else{
+    m.spin(vex::forward);
+  }
+}
+
+class TankDrive : public Robot{
+  protected:
+    vex::motor_group leftSide;
+    vex::motor_group rightSide;
+  
+  public:
+    TankDrive(vex::motor_group& leftSideArg, vex::motor_group& rightSideArg, Point currentPosition, double currentHeading, bool currentHeadingInDeg,
+              PIDGains linearGainContants, PIDGains roationalGainContants,
+              PIDGains reverseLinearGainContants, PIDGains reverseRoationalGainContants) : Robot(currentPosition, currentHeading, currentHeadingInDeg,
+              linearGainContants, roationalGainContants,
+              reverseLinearGainContants, reverseRoationalGainContants){
+      leftSide = leftSideArg;
+      rightSide = rightSideArg;
+    }
+
+    void updateMotors(){
+      double speed = getTangentVelocity().getMagnitude();
+      double omega = getAngularVelocity();
+
+      double left = speed - omega;
+      double right = speed + omega;
+
+      if(abs(right) > maxV){
+        left = left - (abs(right) - maxV)*sign(left);
+        right = maxV*sign(right);
+      }
+      if(abs(left) > maxV){
+        right = right - (abs(left) - maxV)*sign(left);
+        left = maxV*sign(left);
+      }
+
+      setSide(leftSide, left);
+      setSide(rightSide, right);
+    }
+};
+
+class XDrive : public Robot{
+
+};
 
 #endif
